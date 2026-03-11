@@ -9,15 +9,15 @@ class DocumentAnalysis(Base):
     __tablename__ = "document_analysis"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    passenger_name = Column(String, nullable=True)
-    flight_number = Column(String, nullable=True)
-    train_number = Column(String, nullable=True)
+    passenger_name = Column(String(255), nullable=True)
+    flight_number = Column(String(255), nullable=True)
+    train_number = Column(String(255), nullable=True)
     travel_date = Column(DateTime, nullable=True)
 
-    status = Column(String, nullable=False)  # approved | rejected | error
+    status = Column(String(30), nullable=False)  # approved | rejected | error
 
-    error_message = Column(String, nullable=True)  # NEW COLUMN
+    error_message = Column(String(255), nullable=True)  # NEW COLUMN
 
-    file_path = Column(String, nullable=True)
+    file_path = Column(String(255), nullable=True)
 
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
