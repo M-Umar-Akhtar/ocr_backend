@@ -1,12 +1,12 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text, create_engine
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 import datetime
 
 Base = declarative_base()
 
 class DocumentAnalysis(Base):
-    __tablename__ = "document_analysis"
+    __tablename__ = "travel_documents"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     passenger_name = Column(String(255), nullable=True)
@@ -16,7 +16,7 @@ class DocumentAnalysis(Base):
 
     status = Column(String(30), nullable=False)  # approved | rejected | error
 
-    error_message = Column(String(255), nullable=True)  # NEW COLUMN
+    error_message = Column(String(255), nullable=True) 
 
     file_path = Column(String(255), nullable=True)
 

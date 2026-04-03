@@ -13,7 +13,8 @@ from flask_cors import CORS
 from database import engine, Base, SessionLocal
 from models import DocumentAnalysis
 import requests
-import nlpcloud
+import time
+from openai import OpenAI
 
 # ===============================
 # FLASK SETUP
@@ -24,28 +25,23 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 CORS(app) 
 OCR_API_KEY = os.getenv("OCR_API_KEY")
-NLP_CLOUD_KEY = os.getenv("NLP_CLOUD_KEY")
-# ===============================
-# DATABASE SETUP (SQLAlchemy)
-# ===============================
-
-#Base.metadata.create_all(bind=engine)
-client = nlpcloud.Client("finetuned-llama-3-70b", NLP_CLOUD_KEY, gpu=True)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ===============================
 # OCR & INFORMATION EXTRACTION
 # ===============================
-def extract_text_from_image(image_path):
-    with open(image_path, "rb") as f:
-        response = requests.post(
-            "https://api.ocr.space/parse/image",
-            files={"file": f},
-            data={
-                "apikey": OCR_API_KEY,
-                "language": "eng",
-                "isOverlayRequired": False,
-            },
-        )
+def extract_text_from_image(file_obj):
+    filename = file_obj.filename if file_obj.filename else "upload.jpg"
+
+    response = requests.post(
+        "https://api.ocr.space/parse/image",
+        files={"file": (filename, file_obj)},
+        data={
+            "apikey": OCR_API_KEY,
+            "language": "eng",
+            "isOverlayRequired": False,
+        },
+    )
 
     result = response.json()
     if result.get("IsErroredOnProcessing"):
@@ -54,105 +50,6 @@ def extract_text_from_image(image_path):
         return result["ParsedResults"][0]["ParsedText"]
     except:
         return ""
-
-# def extract_information(text):
-#     data = {
-#         "passenger_name": None,
-#         "flight_number": None,
-#         "train_number": None,
-#         "travel_date": None,
-#         "errors": []
-#     }
-
-#     lines = [line.strip() for line in text.split("\n") if line.strip()]
-
-#     # ---- Train Number ----
-#     train_match = re.search(r"\b\d{4,5}\s*/\s*[A-Z\s]{3,}\b", text.upper())
-#     if train_match:
-#         data["train_number"] = train_match.group().replace(" ", "")
-
-#     # ---- Flight Number ----
-#     flight_match = re.search(r"\b[A-Z]{2,3}\s?\d{2,4}\b", text.upper())
-#     if flight_match:
-#         data["flight_number"] = flight_match.group().replace(" ", "")
-
-#     # ---- Travel Date ----
-#     normalized_text = re.sub(r"\bI{1,3}\b", lambda m: str(len(m.group())), text.upper())
-#     date_patterns = [
-#         r"\b\d{1,2}[-/][A-Z]{3}[-/]\d{2,4}\b",          # 9-OCT-2013
-#         r"\b\d{1,2}\s[A-Z]{3}\s\d{2,4}\b",              # 9 OCT 2013
-#         r"\b\d{4}[-/]\d{2}[-/]\d{2}\b",                 # 2013-10-09
-#         r"\b[A-Z]{3,9}\s\d{1,2},?\s\d{4}\b",            # OCTOBER 9 2013
-#         r"\d{1,2}\s(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)",     # 09 OCT
-#         r"\b\d{1,2}(?:st|nd|rd|th)?\s[A-Z]{3,9}\b"
-#     ]
-
-#     found_dates = []
-#     for pattern in date_patterns:
-#         found_dates.extend(re.findall(pattern, normalized_text))
-
-#     # Prefer date near "Departure"
-#     departure_lines = [line for line in lines if "DEPARTURE" in line.upper()]
-#     date_found = None
-#     for dline in departure_lines:
-#         for pattern in date_patterns:
-#             m = re.findall(pattern, dline.upper())
-#             if m:
-#                 date_found = m[0]
-#                 break
-#         if date_found:
-#             break
-#     if not date_found and found_dates:
-#         date_found = found_dates[0]
-
-#     if date_found:
-#     # Check if year is present
-#         if re.search(r"\b\d{4}\b", date_found):
-#             try:
-#                 parsed_date = parser.parse(date_found, fuzzy=True)
-#                 if parsed_date.year < 100:
-#                     parsed_date = parsed_date.replace(year=2000 + parsed_date.year)
-#                 data["travel_date"] = parsed_date.strftime("%Y-%m-%d")
-#             except Exception:
-#                 data["errors"].append("Invalid date format")
-#         else:
-#             data["travel_date"] = date_found
-#             data["errors"].append("Travel date missing year")
-#     else:
-#         data["errors"].append("Travel date not found")
-
-#     # ---- Passenger Name ----
-#     blacklist_words = [
-#         "AIRLINES", "AIRWAYS", "AIR", "INTERNATIONAL",
-#         "FLIGHT", "BOARDING", "GATE", "TIME", "CHECK",
-#         "TERMINAL", "DEPARTURE", "ARRIVAL", "RESERVATION", "SLIP", "ELECTRONIC", "USER","BUSINESS"
-#     ]
-
-#     name_found = False
-#     for i, line in enumerate(lines):
-#         if "# NAME" in line.upper() or "PASSENGER" in line.upper():
-#             parts = line.split(":")
-#             candidate = parts[1].strip() if len(parts) > 1 else (lines[i+1].strip() if i+1 < len(lines) else "")
-#             candidate = candidate.upper()
-#             if candidate and not any(word in candidate for word in blacklist_words):
-#                 data["passenger_name"] = candidate
-#                 name_found = True
-#                 break
-
-#     if not name_found:
-#         for line in lines:
-#             clean_line = line.strip().upper()
-#             if (clean_line.isupper() and 2 <= len(clean_line.split()) <= 3 and
-#                 not any(word in clean_line for word in blacklist_words) and
-#                 not re.search(r"\d", clean_line)):
-#                 data["passenger_name"] = clean_line
-#                 break
-
-#     if not data["passenger_name"]:
-#         data["errors"].append("Passenger name not found")
-
-#     return data
-
 
 def extract_json_from_text(text):
     """
@@ -169,38 +66,56 @@ def extract_json_from_text(text):
 
 def extract_from_ocr(ocr_text):
     """
-    Extract passenger_name, flight_number, train_number, travel_date from OCR text
-    using finetuned-llama-3-70b and structured JSON prompt.
+    Extract structured fields from OCR text using OpenAI (lightweight model).
     """
-    try:
-        # Prepare the prompt
-        prompt = f"""
-Extract the following fields from the text below:
+
+    prompt = f"""
+You are a strict information extraction system.
+
+Extract the following fields from the text:
 
 - passenger_name
 - flight_number
 - train_number
 - travel_date
 
-Text: \"\"\"{ocr_text}\"\"\"
+Return ONLY valid JSON in this format:
+{{
+  "passenger_name": null,
+  "flight_number": null,
+  "train_number": null,
+  "travel_date": null
+}}
 
-Return the output in valid JSON format with keys exactly:
-passenger_name, flight_number, train_number, travel_date. 
-If a field is not present, set its value to null.
+Rules:
+- Output ONLY JSON
+- No explanation
+- Use null if missing
+
+Text:
+\"\"\"{ocr_text}\"\"\"
 """
 
-        # Call the model
-        response = client.generation(prompt, max_length=300)
-        output_text = response.get("generated_text", "").strip()
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You extract structured data from text."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0
+        )
 
-        # Try to parse JSON from the model's output
+        output_text = response.choices[0].message.content.strip()
+
+        # Parse JSON safely
         try:
-            data = extract_json_from_text(output_text)
+            return json.loads(output_text)
         except json.JSONDecodeError:
-            # If parsing fails, return raw text for debugging
-            data = {"error": "Failed to parse JSON", "raw_output": output_text}
-        print("Model response: ",data)
-        return data
+            return {
+                "error": "JSON parse failed",
+                "raw_output": output_text
+            }
 
     except Exception as e:
         return {"error": str(e)}
@@ -270,22 +185,22 @@ def home():
 def upload_file():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
+
     file = request.files["file"]
+
     if file.filename == "":
         return jsonify({"error": "Empty filename"}), 400
+    filename = file.filename if file.filename else "unknown_file"
+    # OCR directly from memory (NO saving)
+    extracted_text = extract_text_from_image(file)
 
-    filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
-    file.save(filepath)
-    print("Before OCR")
-    # OCR
-    extracted_text = extract_text_from_image(filepath)
-    print("extracted_text: ",extracted_text)
+    print("extracted_text: ", extracted_text)
+
     # Extract structured info
-
     result = extract_information(extracted_text)
-    print("After")
+    print("errors: ",result["errors"])
     # ===============================
-    # Determine status & save if no errors
+    # Handle errors
     # ===============================
     if result["errors"]:
         db = SessionLocal()
@@ -297,7 +212,7 @@ def upload_file():
             travel_date=None,
             status="error",
             error_message=", ".join(result["errors"]),
-            file_path=filepath
+            file_path=filename
         )
 
         db.add(record)
@@ -307,27 +222,42 @@ def upload_file():
         result["status"] = "error"
         return jsonify(result)
 
-    travel_date_obj = datetime.strptime(result["travel_date"], "%Y-%m-%d") if result.get("travel_date") else None
+    # ===============================
+    # Determine status
+    # ===============================
+    travel_date_obj = None
+    if result.get("travel_date"):
+        try:
+            travel_date_obj = datetime.strptime(result["travel_date"], "%Y-%m-%d")
+        except:
+            travel_date_obj = None
+
     if travel_date_obj and travel_date_obj.year < 2025:
         status = "rejected"
     else:
         status = "approved"
 
+    # ===============================
     # Save to DB
+    # ===============================
     db = SessionLocal()
+
     record = DocumentAnalysis(
         passenger_name=result.get("passenger_name"),
         flight_number=result.get("flight_number"),
         train_number=result.get("train_number"),
         travel_date=travel_date_obj,
         status=status,
-        file_path=filepath  # <-- save file path here
+        file_path=filename 
     )
+
     db.add(record)
     db.commit()
     db.close()
 
-    # Return result with status
+    # ===============================
+    # Return result
+    # ===============================
     result["status"] = status
     return jsonify(result)
 
